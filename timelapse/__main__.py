@@ -77,7 +77,7 @@ class YoutubeChannelWatcher:
         upcoming_max_countdown_time: int = 300,
         poll_mode: bool = False,
         poll_interval: int = 900,
-        webhook: YoutubeWebhook = None,
+        webhook = None,
     ):
         self.channel_id = channel_id
         self.upcoming_heartbeat_interval = upcoming_heartbeat_interval
@@ -212,7 +212,8 @@ class YoutubeWebhook:
     ):
         self.webhook_url = webhook_url
         self.server = http.server.HTTPServer(server_addr, self.get_webhook_handler())
-        self.server.serve_forever()
+        self.server_thread = threading.Thread(target=self.server.serve_forever)
+        self.server_thread.start()
         logger.info('Started serving youtube webhook')
     def subscribe(self, channel_id: str):
         resp = requests.post(
@@ -222,6 +223,7 @@ class YoutubeWebhook:
                 'hub.mode': 'subscribe',
                 'hub.verify': 'sync',
                 'hub.topic': YOUTUBE_CHANNEL_FEED_URL.format(channel_id=channel_id),
+                'hub.lease_seconds': 86400 * 5,
             },
         )
         resp.raise_for_status()
@@ -237,8 +239,10 @@ class YoutubeWebhook:
                     print(qs)
                     self.send_response(200)
                     self.end_headers()
-                    self.wfile.write(qs['hub.challenge'][0])
+                    self.wfile.write(qs['hub.challenge'][0].encode('utf8'))
                     return
+                self.send_response(400)
+                return
         return YoutubeWebhookHandler
 
 
