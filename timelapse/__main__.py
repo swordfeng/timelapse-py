@@ -240,6 +240,7 @@ class YoutubeWebhook:
     ):
         self.webhook_url = webhook_url
         self.watchers = {}
+        self.lock = threading.RLock()
         self.server = http.server.HTTPServer(server_addr, self.get_webhook_handler())
         self.server_thread = threading.Thread(target=self.server.serve_forever)
         self.server_thread.start()
@@ -257,8 +258,22 @@ class YoutubeWebhook:
         )
         resp.raise_for_status()
         assert resp.status_code == 202
-        self.watchers[channel_id] = watcher
+        with self.lock:
+            self.watchers[channel_id] = watcher
         logger.info(f'Subscribed to channel {channel_id}')
+    def subscribe_keep_alive(self):
+        while True:
+            time.sleep(86400)
+            with self.lock:
+                cids = list(self.watchers.keys())
+            for channel_id in cids:
+                try:
+                    with self.lock:
+                        self.subscribe(channel_id, self.watchers[channel_id])
+                except:
+                    logger.exception('Re-subscribing error')
+                finally:
+                    time.sleep(5)
     def get_webhook_handler(self):
         webhook = self
         class YoutubeWebhookHandler(http.server.BaseHTTPRequestHandler):
