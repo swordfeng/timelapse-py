@@ -10,6 +10,10 @@ import logging
 import itertools
 import threading
 import json
+import http
+import urllib.parse
+
+from typing import Tuple
 
 logger = logging.getLogger('timelapse')
 loghandler = logging.StreamHandler()
@@ -68,10 +72,12 @@ class YoutubeChannelWatcher:
         self,
         channel_id: str,
         download_path: str,
+        *,
         upcoming_heartbeat_interval: int = 15,
         upcoming_max_countdown_time: int = 300,
         poll_mode: bool = False,
         poll_interval: int = 900,
+        webhook: YoutubeWebhook = None,
     ):
         self.channel_id = channel_id
         self.upcoming_heartbeat_interval = upcoming_heartbeat_interval
@@ -79,12 +85,18 @@ class YoutubeChannelWatcher:
         self.download_path = download_path
         self.tracking = set()
         self.lock = threading.RLock()
-        # initial poll
-        self.poll()
         # repeated poll in polling mode
         if poll_mode:
             self.poll_thread = threading.Thread(target=self.run_poll, args=(poll_interval,))
             self.poll_thread.start()
+        else:
+            assert webhook
+            webhook.subscribe(channel_id)
+        # initial poll
+        try:
+            self.poll()
+        except:
+            logger.exception('Polling error')
 
     def watch_video(self, video_id: str):
         self.tracking.add(video_id)
@@ -188,6 +200,47 @@ class YoutubeLivestreamWatcher:
         finally:
             with self.channel_watcher.lock:
                 self.channel_watcher.tracking.discard(self.video_id)
+
+
+YOUTUBE_FEED_HUB = 'http://pubsubhubbub.appspot.com'
+YOUTUBE_CHANNEL_FEED_URL = 'https://www.youtube.com/xml/feeds/videos.xml?channel_id={channel_id}'
+class YoutubeWebhook:
+    def __init__(
+        self,
+        server_addr: Tuple[str, int],
+        webhook_url: str,
+    ):
+        self.webhook_url = webhook_url
+        self.server = http.server.HTTPServer(server_addr, self.get_webhook_handler())
+        self.server.serve_forever()
+        logger.info('Started serving youtube webhook')
+    def subscribe(self, channel_id: str):
+        resp = requests.post(
+            YOUTUBE_FEED_HUB,
+            data={
+                'hub.callback': self.webhook_url, 
+                'hub.mode': 'subscribe',
+                'hub.verify': 'sync',
+                'hub.topic': YOUTUBE_CHANNEL_FEED_URL.format(channel_id=channel_id),
+            },
+        )
+        resp.raise_for_status()
+        assert resp.status_code == 202
+        logger.info(f'Subscribed to channel {channel_id}')
+    def get_webhook_handler(self):
+        webhook = self
+        class YoutubeWebhookHandler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                url = urllib.parse.urlparse(self.path)
+                qs = urllib.parse.parse_qs(url.query)
+                if 'hub.challenge' in qs:
+                    print(qs)
+                    self.send_response(200)
+                    self.end_headers()
+                    self.wfile.write(qs['hub.challenge'][0])
+                    return
+        return YoutubeWebhookHandler
+
 
 # YoutubeChannelWatcher('UC5CwaMl1eIgY8h02uZw7u8A').poll()
 # YoutubeChannelWatcher('UCIG9rDtgR45VCZmYnd-4DUw', 'videos')
