@@ -204,7 +204,7 @@ class YoutubeLivestreamWatcher:
                         if 'displayEndscreen' in renderer and renderer['displayEndscreen']:
                             # old recorded live video
                             return
-                        self.scheduled_time = renderer['offlineSlate']['liveStreamOfflineSlateRenderer']['scheduledStartTime']
+                        self.scheduled_time = int(renderer['offlineSlate']['liveStreamOfflineSlateRenderer']['scheduledStartTime'])
                     elif status == 'OK':
                         if 'liveStreamability' not in status_data['playabilityStatus']:
                             # uploaded video, not live
