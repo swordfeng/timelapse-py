@@ -233,7 +233,7 @@ class YoutubeLivestreamWatcher:
                     self.download_path,
                 ),
             )
-            download_proc.run()
+            download_proc.start()
             # continue heartbeat
             while download_proc.is_alive():
                 try:
