@@ -81,11 +81,13 @@ class YoutubeChannelWatcher:
         poll_mode: bool = False,
         poll_interval: int = 900,
         webhook = None,
+        post_download = None,
     ):
         self.channel_id = channel_id
         self.upcoming_heartbeat_interval = upcoming_heartbeat_interval
         self.upcoming_poll_start = upcoming_poll_start
         self.download_path = download_path
+        self.post_download = post_download
         self.tracking = {}
         self.lock = threading.RLock()
         # repeated poll in polling mode
@@ -112,6 +114,7 @@ class YoutubeChannelWatcher:
                     download_path=self.download_path,
                     heartbeat_interval=self.upcoming_heartbeat_interval,
                     upcoming_poll_start=self.upcoming_poll_start,
+                    post_download=self.post_download,
                 )
 
     def poll(self):
@@ -153,6 +156,7 @@ class YoutubeLivestreamWatcher:
         download_path: str,
         heartbeat_interval: int,
         upcoming_poll_start: int,
+        post_download = None,
     ):
         logger.debug(f'Tracking video {video_id}')
         self.video_id = video_id
@@ -160,9 +164,11 @@ class YoutubeLivestreamWatcher:
         self.heartbeat_interval = heartbeat_interval
         self.download_path = os.path.join(download_path, video_id)
         self.upcoming_poll_start = upcoming_poll_start
+        self.post_download = post_download
         self.scheduled_time = 0
         self.last_poll = 0
         self.force_refresh = True
+        self.finished = False
         self.watch_thread = threading.Thread(target=self.run_watch)
         self.watch_thread.start()
     def poll_heartbeat(self):
@@ -262,7 +268,7 @@ class YoutubeLivestreamWatcher:
                 logger.error(f'Downloader exited with code {download_proc.exitcode}')
                 return
             logger.debug(f'Finished downloading {self.video_id}')
-            # todo: after-download hook
+            self.finished = True
         except:
             logger.exception('Failed to download video stream')
         finally:
@@ -270,6 +276,11 @@ class YoutubeLivestreamWatcher:
                 del self.channel_watcher.tracking[self.video_id]
             if download_proc and download_proc.is_alive():
                 download_proc.kill()
+            if self.post_download:
+                try:
+                    self.post_download(self.finished, self.download_path)
+                except:
+                    logger.exception('Post download hook error')
 
 
 YOUTUBE_FEED_HUB = 'http://pubsubhubbub.appspot.com'
