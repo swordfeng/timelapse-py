@@ -13,6 +13,8 @@ import json
 import http
 import urllib.parse
 import xml.etree.ElementTree as ET
+import multiprocessing
+import signal
 
 from typing import Tuple
 
@@ -152,6 +154,7 @@ class YoutubeLivestreamWatcher:
         heartbeat_interval: int,
         upcoming_poll_start: int,
     ):
+        logger.debug(f'Tracking video {video_id}')
         self.video_id = video_id
         self.channel_watcher = channel_watcher
         self.heartbeat_interval = heartbeat_interval
@@ -162,7 +165,29 @@ class YoutubeLivestreamWatcher:
         self.force_refresh = True
         self.watch_thread = threading.Thread(target=self.run_watch)
         self.watch_thread.start()
+    def poll_heartbeat(self):
+        logger.debug(f'Polling stream {self.video_id}')
+        status_data = requests.post(
+            YOUTUBE_LIVE_HEARTBEAT,
+            headers=YOUTUBE_COMMON_HEADERS,
+            json={
+                "videoId": self.video_id,
+                "context": {
+                    "client": {
+                        "clientName": "WEB",
+                        "clientVersion": YOUTUBE_CLIENT_VERSION
+                    }
+                },
+                "heartbeatRequestParams": {
+                    "heartbeatChecks": [
+                        "HEARTBEAT_CHECK_TYPE_LIVE_STREAM_STATUS"
+                    ]
+                }
+            },
+        ).json()
+        return status_data
     def run_watch(self):
+        download_proc = None
         try:
             while True:
                 now = time.time()
@@ -176,25 +201,7 @@ class YoutubeLivestreamWatcher:
                 self.force_refresh = False
                 self.last_poll = now
                 try:
-                    logger.debug(f'Polling stream {self.video_id}')
-                    status_data = requests.post(
-                        YOUTUBE_LIVE_HEARTBEAT,
-                        headers=YOUTUBE_COMMON_HEADERS,
-                        json={
-                            "videoId": self.video_id,
-                            "context": {
-                                "client": {
-                                    "clientName": "WEB",
-                                    "clientVersion": YOUTUBE_CLIENT_VERSION
-                                }
-                            },
-                            "heartbeatRequestParams": {
-                                "heartbeatChecks": [
-                                    "HEARTBEAT_CHECK_TYPE_LIVE_STREAM_STATUS"
-                                ]
-                            }
-                        },
-                    ).json()
+                    status_data = self.poll_heartbeat()
                     if 'error' in status_data:
                         logger.error('Server error: ' + status_data['error']['message'])
                         return
@@ -217,17 +224,51 @@ class YoutubeLivestreamWatcher:
                 except:
                     logger.exception('Failed checking video status')
                 time.sleep(self.heartbeat_interval)
+            logger.debug(f'Starting download {self.video_id}')
             os.makedirs(self.download_path, exist_ok=True)
-            download_ytdl(
-                YOUTUBE_VIDEO_URL.format(video_id=self.video_id),
-                self.download_path,
+            download_proc = multiprocessing.Process(
+                target=download_ytdl,
+                args=(
+                    YOUTUBE_VIDEO_URL.format(video_id=self.video_id),
+                    self.download_path,
+                ),
             )
+            download_proc.run()
+            # continue heartbeat
+            while download_proc.is_alive():
+                try:
+                    status_data = self.poll_heartbeat()
+                    if status == 'LIVE_STREAM_OFFLINE':
+                        renderer = status_data['playabilityStatus']['liveStreamability']['liveStreamabilityRenderer']
+                        if 'displayEndscreen' in renderer and renderer['displayEndscreen']:
+                            # streaming ended
+                            break
+                except:
+                    logger.exception('Failed checking video status')
+                time.sleep(self.heartbeat_interval)
+            if download_proc.is_alive():
+                logger.debug(f'Waiting downloader to finish {self.video_id}')
+                download_proc.join(45)
+            if download_proc.is_alive():
+                logger.debug(f'Send SIGINT to downloader {self.video_id}')
+                os.kill(download_proc.pid, signal.SIGINT)
+                download_proc.join(15)
+            if download_proc.is_alive():
+                logger.debug(f'Kill downloader {self.video_id}')
+                download_proc.kill()
+            download_proc.join()
+            if download_proc.exitcode != 0:
+                logger.error(f'Downloader exited with code {download_proc.exitcode}')
+                return
+            logger.debug(f'Finished downloading {self.video_id}')
             # todo: after-download hook
         except:
             logger.exception('Failed to download video stream')
         finally:
             with self.channel_watcher.lock:
                 del self.channel_watcher.tracking[self.video_id]
+            if download_proc and download_proc.is_alive():
+                download_proc.kill()
 
 
 YOUTUBE_FEED_HUB = 'http://pubsubhubbub.appspot.com'
