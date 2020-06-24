@@ -236,6 +236,7 @@ class YoutubeLivestreamWatcher:
             download_proc.start()
             # continue heartbeat
             while download_proc.is_alive():
+                time.sleep(self.heartbeat_interval)
                 try:
                     status_data = self.poll_heartbeat()
                     if status == 'LIVE_STREAM_OFFLINE':
@@ -245,7 +246,6 @@ class YoutubeLivestreamWatcher:
                             break
                 except:
                     logger.exception('Failed checking video status')
-                time.sleep(self.heartbeat_interval)
             if download_proc.is_alive():
                 logger.debug(f'Waiting downloader to finish {self.video_id}')
                 download_proc.join(45)
