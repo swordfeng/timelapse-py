@@ -239,6 +239,7 @@ class YoutubeLivestreamWatcher:
                 time.sleep(self.heartbeat_interval)
                 try:
                     status_data = self.poll_heartbeat()
+                    status = status_data['playabilityStatus']['status']
                     if status == 'LIVE_STREAM_OFFLINE':
                         renderer = status_data['playabilityStatus']['liveStreamability']['liveStreamabilityRenderer']
                         if 'displayEndscreen' in renderer and renderer['displayEndscreen']:
