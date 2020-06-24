@@ -15,6 +15,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 import multiprocessing
 import signal
+from datetime import datetime
 
 from typing import Tuple
 
@@ -57,9 +58,6 @@ def download_youget(url: str, dirpath: str, filename: str = None):
         check=True,
     )
 
-# download_ytdl('https://www.bilibili.com/video/BV1vJ411w7Qb', '/tmp')
-# download_youget('https://www.bilibili.com/video/BV1vJ411w7Qb', '/tmp')
-
 YOUTUBE_CLIENT_VERSION = '2.20200623.04.00'
 YOUTUBE_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8'
 YOUTUBE_COMMON_HEADERS = {
@@ -76,7 +74,7 @@ class YoutubeChannelWatcher:
         channel_id: str,
         download_path: str,
         *,
-        upcoming_heartbeat_interval: int = 15,
+        heartbeat_interval: int = 15,
         upcoming_poll_start: int = 300,
         poll_mode: bool = False,
         poll_interval: int = 900,
@@ -84,7 +82,7 @@ class YoutubeChannelWatcher:
         post_download = None,
     ):
         self.channel_id = channel_id
-        self.upcoming_heartbeat_interval = upcoming_heartbeat_interval
+        self.heartbeat_interval = heartbeat_interval
         self.upcoming_poll_start = upcoming_poll_start
         self.download_path = download_path
         self.post_download = post_download
@@ -92,10 +90,13 @@ class YoutubeChannelWatcher:
         self.lock = threading.RLock()
         # repeated poll in polling mode
         if poll_mode:
+            logger.info(f'Monitoring channel {channel_id} using polling')
             self.poll_thread = threading.Thread(target=self.run_poll, args=(poll_interval,))
             self.poll_thread.start()
         else:
             assert webhook
+        if webhook:
+            logger.info(f'Monitoring channel {channel_id} using webhook')
             webhook.subscribe(channel_id, self)
         # initial poll
         try:
@@ -110,12 +111,16 @@ class YoutubeChannelWatcher:
             else:
                 self.tracking[video_id] = YoutubeLivestreamWatcher(
                     video_id=video_id,
-                    channel_watcher=self,
                     download_path=self.download_path,
-                    heartbeat_interval=self.upcoming_heartbeat_interval,
+                    heartbeat_interval=self.heartbeat_interval,
                     upcoming_poll_start=self.upcoming_poll_start,
+                    channel_watcher=self,
                     post_download=self.post_download,
                 )
+
+    def finish_tracking(self, video_id: str):
+        with self.lock:
+            del self.tracking[self.video_id]
 
     def poll(self):
         logger.debug(f'Polling channel {self.channel_id}')
@@ -123,6 +128,7 @@ class YoutubeChannelWatcher:
             YOUTUBE_CHANNEL_DATA.format(channel_id=self.channel_id),
             headers=YOUTUBE_COMMON_HEADERS
         ).json()
+        logger.debug(channel_data)
         optree = objectpath.Tree(channel_data)
         pollres = set()
         with self.lock:
@@ -135,7 +141,7 @@ class YoutubeChannelWatcher:
                     # already tracked, pass
                     continue
                 pollres.add(video_id)
-                logger.debug(f'Polling found {video_id}: {video_data["title"]["simpleText"]}')
+                logger.info(f'Polling found {video_id}: {video_data["title"]["simpleText"]}')
         for video_id in pollres:
             self.watch_video(video_id)
 
@@ -152,13 +158,13 @@ class YoutubeLivestreamWatcher:
     def __init__(
         self,
         video_id: str,
-        channel_watcher: YoutubeChannelWatcher,
         download_path: str,
         heartbeat_interval: int,
         upcoming_poll_start: int,
+        channel_watcher: YoutubeChannelWatcher = None,
         post_download = None,
     ):
-        logger.debug(f'Tracking video {video_id}')
+        logger.info(f'Tracking video {video_id}')
         self.video_id = video_id
         self.channel_watcher = channel_watcher
         self.heartbeat_interval = heartbeat_interval
@@ -171,6 +177,7 @@ class YoutubeLivestreamWatcher:
         self.finished = False
         self.watch_thread = threading.Thread(target=self.run_watch)
         self.watch_thread.start()
+
     def poll_heartbeat(self):
         logger.debug(f'Polling stream {self.video_id}')
         status_data = requests.post(
@@ -191,7 +198,9 @@ class YoutubeLivestreamWatcher:
                 }
             },
         ).json()
+        logger.debug(status_data)
         return status_data
+
     def run_watch(self):
         download_proc = None
         try:
@@ -200,7 +209,10 @@ class YoutubeLivestreamWatcher:
                 if (
                     not self.force_refresh
                     and self.scheduled_time - now > self.upcoming_poll_start
-                    and now - self.last_poll < 12 * 3600
+                    and now - self.last_poll < (
+                        1200 if self.scheduled_time - now < 86400
+                        else 12 * 3600
+                    )
                 ):
                     time.sleep(self.heartbeat_interval)
                     continue
@@ -217,7 +229,10 @@ class YoutubeLivestreamWatcher:
                         if 'displayEndscreen' in renderer and renderer['displayEndscreen']:
                             # old recorded live video
                             return
-                        self.scheduled_time = int(renderer['offlineSlate']['liveStreamOfflineSlateRenderer']['scheduledStartTime'])
+                        scheduled_time = int(renderer['offlineSlate']['liveStreamOfflineSlateRenderer']['scheduledStartTime'])
+                        if self.scheduled_time != scheduled_time:
+                            self.scheduled_time = scheduled_time
+                            logger.info(f'Video {self.video_id} scheduled at {datetime.fromtimestamp(scheduled_time)}')
                     elif status == 'OK':
                         if 'liveStreamability' not in status_data['playabilityStatus']:
                             # uploaded video, not live
@@ -230,7 +245,7 @@ class YoutubeLivestreamWatcher:
                 except:
                     logger.exception('Failed checking video status')
                 time.sleep(self.heartbeat_interval)
-            logger.debug(f'Starting download {self.video_id}')
+            logger.info(f'Start downloading {self.video_id}')
             os.makedirs(self.download_path, exist_ok=True)
             download_proc = multiprocessing.Process(
                 target=download_ytdl,
@@ -254,26 +269,26 @@ class YoutubeLivestreamWatcher:
                 except:
                     logger.exception('Failed checking video status')
             if download_proc.is_alive():
-                logger.debug(f'Waiting downloader to finish {self.video_id}')
+                logger.info(f'Waiting downloader to finish {self.video_id}')
                 download_proc.join(45)
             if download_proc.is_alive():
-                logger.debug(f'Send SIGINT to downloader {self.video_id}')
+                logger.info(f'Send SIGINT to downloader {self.video_id}')
                 os.kill(download_proc.pid, signal.SIGINT)
                 download_proc.join(15)
             if download_proc.is_alive():
-                logger.debug(f'Kill downloader {self.video_id}')
+                logger.info(f'Kill downloader {self.video_id}')
                 download_proc.kill()
             download_proc.join()
             if download_proc.exitcode != 0:
                 logger.error(f'Downloader exited with code {download_proc.exitcode}')
                 return
-            logger.debug(f'Finished downloading {self.video_id}')
+            logger.info(f'Finished downloading {self.video_id}')
             self.finished = True
         except:
             logger.exception('Failed to download video stream')
         finally:
-            with self.channel_watcher.lock:
-                del self.channel_watcher.tracking[self.video_id]
+            if self.channel_watcher:
+                self.channel_watcher.finish_tracking(self.video_id)
             if download_proc and download_proc.is_alive():
                 download_proc.kill()
             if self.post_download:
@@ -297,7 +312,10 @@ class YoutubeWebhook:
         self.server = http.server.HTTPServer(server_addr, self.get_webhook_handler())
         self.server_thread = threading.Thread(target=self.server.serve_forever)
         self.server_thread.start()
+        self.keep_alive = threading.Thread(target=self.subscribe_keep_alive)
+        self.keep_alive.start()
         logger.info('Started serving youtube webhook')
+
     def subscribe(self, channel_id: str, watcher):
         resp = requests.post(
             YOUTUBE_FEED_HUB,
@@ -313,6 +331,7 @@ class YoutubeWebhook:
         with self.lock:
             self.watchers[channel_id] = watcher
         logger.info(f'Subscribed to channel {channel_id}')
+
     def subscribe_keep_alive(self):
         while True:
             time.sleep(86400)
@@ -326,6 +345,7 @@ class YoutubeWebhook:
                     logger.exception('Re-subscribing error')
                 finally:
                     time.sleep(5)
+
     def get_webhook_handler(self):
         webhook = self
         class YoutubeWebhookHandler(http.server.BaseHTTPRequestHandler):
@@ -341,20 +361,18 @@ class YoutubeWebhook:
                 self.end_headers()
             def do_POST(self):
                 data = self.rfile.read(int(self.headers['Content-Length'])).decode('utf8')
+                logger.debug(data)
                 xmldata = ET.fromstring(data)
                 for entry in xmldata.iter('{http://www.w3.org/2005/Atom}entry'):
                     video_id = entry.find('{http://www.youtube.com/xml/schemas/2015}videoId').text
                     channel_id = entry.find('{http://www.youtube.com/xml/schemas/2015}channelId').text
                     title = entry.find('{http://www.w3.org/2005/Atom}title').text
                     logger.info(f'Push notification {video_id}: {title}')
-                    if channel_id in webhook.watchers:
-                        webhook.watchers[channel_id].watch_video(video_id)
-                    else:
-                        pass
+                    with self.lock:
+                        if channel_id in webhook.watchers:
+                            webhook.watchers[channel_id].watch_video(video_id)
+                        else:
+                            pass
                 self.send_response(200)
                 self.end_headers()
         return YoutubeWebhookHandler
-
-
-# YoutubeChannelWatcher('UC5CwaMl1eIgY8h02uZw7u8A').poll()
-# YoutubeChannelWatcher('UCIG9rDtgR45VCZmYnd-4DUw', 'videos')
