@@ -242,9 +242,9 @@ class YoutubeWebhook:
                     self.wfile.write(qs['hub.challenge'][0].encode('utf8'))
                     return
                 self.send_response(400)
-                return
+                self.end_headers()
             def do_POST(self):
-                data = self.rfile.read().decode('utf8')
+                data = self.rfile.read(int(self.headers['Content-Length'])).decode('utf8')
                 print(data)
                 self.send_response(200)
                 self.end_headers()
