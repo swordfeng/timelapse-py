@@ -295,7 +295,10 @@ class YoutubeWebhook:
                     channel_id = entry.find('{http://www.youtube.com/xml/schemas/2015}channelId').text
                     title = entry.find('{http://www.w3.org/2005/Atom}title').text
                     logger.info(f'Push notification {video_id}: {title}')
-                    webhook.watchers[channel_id].watch_video(video_id)
+                    if channel_id in webhook.watchers:
+                        webhook.watchers[channel_id].watch_video(video_id)
+                    else:
+                        pass
                 self.send_response(200)
                 self.end_headers()
         return YoutubeWebhookHandler
