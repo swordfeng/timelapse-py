@@ -257,7 +257,6 @@ class YoutubeWebhook:
             },
         )
         resp.raise_for_status()
-        assert resp.status_code == 202
         with self.lock:
             self.watchers[channel_id] = watcher
         logger.info(f'Subscribed to channel {channel_id}')
