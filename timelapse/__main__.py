@@ -168,7 +168,7 @@ class YoutubeLivestreamWatcher:
                 now = time.time()
                 if (
                     not self.force_refresh
-                    and self.scheduled_time - now > upcoming_poll_start
+                    and self.scheduled_time - now > self.upcoming_poll_start
                     and now - self.last_poll < 12 * 3600
                 ):
                     time.sleep(self.heartbeat_interval)
