@@ -8,6 +8,8 @@ verify_ssl = true
 [packages]
 youtube-dl = "*"
 you-get = "*"
+requests = "*"
+objectpath = "*"
 
 [requires]
 python_version = "3.8"
