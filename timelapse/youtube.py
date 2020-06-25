@@ -84,7 +84,7 @@ class YoutubeChannelWatcher:
 
     def finish_tracking(self, video_id: str):
         with self.lock:
-            del self.tracking[self.video_id]
+            del self.tracking[video_id]
 
     def poll(self):
         logger.debug(f'Polling channel {self.channel_id}')
