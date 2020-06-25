@@ -4,6 +4,10 @@ import subprocess
 import sys
 import time
 import youtube_dl
+import multiprocessing
+import signal
+import inspect
+from typing import Optional
 
 from .logger import logger
 
@@ -39,3 +43,31 @@ def download_youget(url: str, dirpath: str, filename: str = None):
         stderr=sys.stderr,
         check=True,
     )
+
+def _signal_handler(signum, frame):
+    last_func = None
+    while frame is not None:
+        func = inspect.getframeinfo(frame).function
+        if last_func == 'wait' and func == '_call_downloader':
+            raise KeyboardInterrupt
+
+def _download_ytdl_signaled(url: str, dirpath: str):
+    signal.signal(signal.SIGUSR1, _signal_handler)
+    download_ytdl(url, dirpath)
+
+class download_ytdl_interruptable:
+    def __init__(self, url: str, dirpath: str):
+        self.proc = multiprocessing.Process(
+        target=_download_ytdl_signaled,
+        args=(url, dirpath),
+    )
+    def interrupt(self):
+        os.kill(self.proc.pid, signal.SIGUSR1)
+    def is_running(self):
+        return self.proc.is_alive()
+    def wait(self, timeout: Optional[float] = None):
+        return self.proc.join(timeout)
+    def kill(self):
+        self.proc.kill()
+    def finished(self):
+        return self.proc.exitcode == 0

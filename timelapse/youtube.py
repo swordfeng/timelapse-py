@@ -13,13 +13,11 @@ import json
 import http
 import urllib.parse
 import xml.etree.ElementTree as ET
-import multiprocessing
-import signal
 from datetime import datetime
 from typing import Tuple
 
 from .logger import logger
-from .downloader import download_ytdl
+from .downloader import download_ytdl_interruptable
 
 YOUTUBE_CLIENT_VERSION = '2.20200623.04.00'
 YOUTUBE_COMMON_HEADERS = {
@@ -31,6 +29,7 @@ YOUTUBE_LIVE_HEARTBEAT = 'https://www.youtube.com/youtubei/v1/player/heartbeat?a
 YOUTUBE_VIDEO_URL = 'https://www.youtube.com/watch?v={video_id}'
 YOUTUBE_FEED_HUB = 'http://pubsubhubbub.appspot.com'
 YOUTUBE_CHANNEL_FEED_URL = 'https://www.youtube.com/xml/feeds/videos.xml?channel_id={channel_id}'
+
 
 class YoutubeChannelWatcher:
     def __init__(
@@ -166,7 +165,7 @@ class YoutubeLivestreamWatcher:
         return status_data
 
     def run_watch(self):
-        download_proc = None
+        ytdl_handle = None
         try:
             while True:
                 now = time.time()
@@ -211,16 +210,12 @@ class YoutubeLivestreamWatcher:
                 time.sleep(self.heartbeat_interval)
             logger.info(f'Start downloading {self.video_id}')
             os.makedirs(self.download_path, exist_ok=True)
-            download_proc = multiprocessing.Process(
-                target=download_ytdl,
-                args=(
-                    YOUTUBE_VIDEO_URL.format(video_id=self.video_id),
-                    self.download_path,
-                ),
+            ytdl_handle = download_ytdl_interruptable(
+                YOUTUBE_VIDEO_URL.format(video_id=self.video_id),
+                self.download_path,
             )
-            download_proc.start()
             # continue heartbeat
-            while download_proc.is_alive():
+            while ytdl_handle.is_running():
                 time.sleep(self.heartbeat_interval)
                 try:
                     status_data = self.poll_heartbeat()
@@ -232,29 +227,23 @@ class YoutubeLivestreamWatcher:
                             break
                 except:
                     logger.exception('Failed checking video status')
-            if download_proc.is_alive():
-                logger.info(f'Waiting downloader to finish {self.video_id}')
-                download_proc.join(45)
-            if download_proc.is_alive():
-                logger.info(f'Send SIGINT to downloader {self.video_id}')
-                os.kill(download_proc.pid, signal.SIGINT)
-                download_proc.join(15)
-            if download_proc.is_alive():
-                logger.info(f'Kill downloader {self.video_id}')
-                download_proc.kill()
-            download_proc.join()
-            if download_proc.exitcode != 0:
-                logger.error(f'Downloader exited with code {download_proc.exitcode}')
-                return
+            logger.info(f'Waiting downloader to finish {self.video_id}')
+            ytdl_handle.wait(45)
+            if ytdl_handle.is_running():
+                logger.info(f'Stopping downloader {self.video_id}')
+                ytdl_handle.interrupt()
+            ytdl_handle.join()
+            if not ytdl_handle.finished():
+                raise
             logger.info(f'Finished downloading {self.video_id}')
             self.finished = True
         except:
-            logger.exception('Failed to download video stream')
+            logger.exception(f'Failed to download {self.video_id}')
         finally:
             if self.channel_watcher:
                 self.channel_watcher.finish_tracking(self.video_id)
-            if download_proc and download_proc.is_alive():
-                download_proc.kill()
+            if ytdl_handle and ytdl_handle.is_running():
+                ytdl_handle.kill()
             if self.post_download:
                 try:
                     self.post_download(self.finished, self.download_path)

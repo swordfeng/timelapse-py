@@ -1,4 +1,5 @@
 __pycache__/
 .zcache/
+.vscode/
 
 videos/
