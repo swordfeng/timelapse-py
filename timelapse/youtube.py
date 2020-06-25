@@ -22,13 +22,12 @@ from .logger import logger
 from .downloader import download_ytdl
 
 YOUTUBE_CLIENT_VERSION = '2.20200623.04.00'
-YOUTUBE_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8'
 YOUTUBE_COMMON_HEADERS = {
     'x-youtube-client-name': '1',
     'x-youtube-client-version': YOUTUBE_CLIENT_VERSION,
 }
 YOUTUBE_CHANNEL_DATA = 'https://www.youtube.com/channel/{channel_id}?pbj=1'
-YOUTUBE_LIVE_HEARTBEAT = f'https://www.youtube.com/youtubei/v1/player/heartbeat?alt=json&key={YOUTUBE_KEY}'
+YOUTUBE_LIVE_HEARTBEAT = 'https://www.youtube.com/youtubei/v1/player/heartbeat?alt=json&key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8'
 YOUTUBE_VIDEO_URL = 'https://www.youtube.com/watch?v={video_id}'
 YOUTUBE_FEED_HUB = 'http://pubsubhubbub.appspot.com'
 YOUTUBE_CHANNEL_FEED_URL = 'https://www.youtube.com/xml/feeds/videos.xml?channel_id={channel_id}'
