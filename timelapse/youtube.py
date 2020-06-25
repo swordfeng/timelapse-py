@@ -16,47 +16,10 @@ import xml.etree.ElementTree as ET
 import multiprocessing
 import signal
 from datetime import datetime
-
 from typing import Tuple
 
-logger = logging.getLogger('timelapse')
-loghandler = logging.StreamHandler()
-loghandler.setFormatter(logging.Formatter('[%(name)s][%(levelname)s] %(message)s'))
-logger.addHandler(loghandler)
-logger.setLevel(logging.DEBUG)
-
-def download_ytdl(url: str, dirpath: str):
-    logger.info(f'Downloading {url} using youtube-dl')
-    ydl_opts = {
-        'writeinfojson': True,
-        'outtmpl': os.path.join(dirpath, '%(id)s.%(ext)s'),
-        'postprocessor_args': ['-loglevel', 'warning'],
-        'external_downloader_args': ['-loglevel', 'warning'],
-    }
-    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
-
-def download_youget(url: str, dirpath: str, filename: str = None):
-    logger.info(f'Downloading {url} using youget')
-    if not filename:
-        filename = str(int(time.time()))
-    # download meta info
-    infopath = os.path.join(dirpath, filename + '.info.json')
-    logger.info(f'Downloading info to {infopath}')
-    with open(infopath, 'w') as f:
-        subprocess.run(
-            ('you-get', '--json', url),
-            stdout=f,
-            stderr=sys.stderr,
-            check=True,
-        )
-    logger.info('Download stream file')
-    subprocess.run(
-        ('you-get', '-o', dirpath, '-O', filename, '--no-caption', '-f', url),
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-        check=True,
-    )
+from .logger import logger
+from .downloader import download_ytdl
 
 YOUTUBE_CLIENT_VERSION = '2.20200623.04.00'
 YOUTUBE_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8'
@@ -67,6 +30,8 @@ YOUTUBE_COMMON_HEADERS = {
 YOUTUBE_CHANNEL_DATA = 'https://www.youtube.com/channel/{channel_id}?pbj=1'
 YOUTUBE_LIVE_HEARTBEAT = f'https://www.youtube.com/youtubei/v1/player/heartbeat?alt=json&key={YOUTUBE_KEY}'
 YOUTUBE_VIDEO_URL = 'https://www.youtube.com/watch?v={video_id}'
+YOUTUBE_FEED_HUB = 'http://pubsubhubbub.appspot.com'
+YOUTUBE_CHANNEL_FEED_URL = 'https://www.youtube.com/xml/feeds/videos.xml?channel_id={channel_id}'
 
 class YoutubeChannelWatcher:
     def __init__(
@@ -298,8 +263,6 @@ class YoutubeLivestreamWatcher:
                     logger.exception('Post download hook error')
 
 
-YOUTUBE_FEED_HUB = 'http://pubsubhubbub.appspot.com'
-YOUTUBE_CHANNEL_FEED_URL = 'https://www.youtube.com/xml/feeds/videos.xml?channel_id={channel_id}'
 class YoutubeWebhook:
     def __init__(
         self,
