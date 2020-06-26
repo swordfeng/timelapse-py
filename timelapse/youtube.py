@@ -284,7 +284,9 @@ class YoutubeWebhook:
         )
         resp.raise_for_status()
         with self.lock:
-            self.watchers[channel_id] = watcher
+            if channel_id not in self.watchers:
+                self.watchers[channel_id] = set()
+            self.watchers[channel_id].add(watcher)
         logger.info(f'Subscribed to channel {channel_id}')
 
     def subscribe_keep_alive(self):
@@ -325,7 +327,8 @@ class YoutubeWebhook:
                     logger.debug(f'Push notification {video_id}')
                     with webhook.lock:
                         if channel_id in webhook.watchers:
-                            webhook.watchers[channel_id].watch_video(video_id, title)
+                            for watcher in webhook.watchers[channel_id]:
+                                watcher.watch_video(video_id, title)
                         else:
                             pass
                 self.send_response(200)
