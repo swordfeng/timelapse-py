@@ -48,7 +48,6 @@ def _signal_handler(signum, frame):
     last_func = None
     while frame is not None:
         func = inspect.getframeinfo(frame).function
-        print(func)
         if last_func == 'wait' and func == '_call_downloader':
             raise KeyboardInterrupt
         last_func = func
