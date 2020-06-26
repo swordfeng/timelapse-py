@@ -44,6 +44,7 @@ class YoutubeChannelWatcher:
         poll_mode: bool = False,
         poll_interval: int = 900,
         webhook = None,
+        started_download = None,
         post_download = None,
     ):
         self.channel_id = channel_id
@@ -51,6 +52,7 @@ class YoutubeChannelWatcher:
         self.heartbeat_interval = heartbeat_interval
         self.upcoming_poll_start = upcoming_poll_start
         self.download_path = download_path
+        self.started_download = started_download
         self.post_download = post_download
         self.tracking = {}
         self.lock = threading.RLock()
@@ -85,6 +87,7 @@ class YoutubeChannelWatcher:
                     heartbeat_interval=self.heartbeat_interval,
                     upcoming_poll_start=self.upcoming_poll_start,
                     channel_watcher=self,
+                    started_download=self.started_download,
                     post_download=self.post_download,
                 )
 
@@ -129,6 +132,7 @@ class YoutubeLivestreamWatcher:
         heartbeat_interval: int,
         upcoming_poll_start: int,
         channel_watcher: Optional[YoutubeChannelWatcher] = None,
+        started_download = None,
         post_download = None,
     ):
         logger.info(f'Tracking video {video_id}')
@@ -137,6 +141,7 @@ class YoutubeLivestreamWatcher:
         self.heartbeat_interval = heartbeat_interval
         self.download_path = os.path.join(download_path, video_id)
         self.upcoming_poll_start = upcoming_poll_start
+        self.started_download = started_download
         self.post_download = post_download
         self.scheduled_time = 0
         self.last_poll = 0
@@ -218,6 +223,8 @@ class YoutubeLivestreamWatcher:
                 YOUTUBE_VIDEO_URL.format(video_id=self.video_id),
                 self.download_path,
             )
+            if self.started_download:
+                self.started_download(self.video_id, self.download_path)
             # continue heartbeat
             while ytdl_handle.is_running():
                 time.sleep(self.heartbeat_interval)
@@ -250,7 +257,7 @@ class YoutubeLivestreamWatcher:
                 ytdl_handle.kill()
             if self.post_download:
                 try:
-                    self.post_download(self.finished, self.download_path)
+                    self.post_download(self.video_id, self.download_path, self.finished)
                 except:
                     logger.exception('Post download hook error')
 
