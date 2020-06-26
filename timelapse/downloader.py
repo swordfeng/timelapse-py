@@ -48,8 +48,11 @@ def _signal_handler(signum, frame):
     last_func = None
     while frame is not None:
         func = inspect.getframeinfo(frame).function
+        print(func)
         if last_func == 'wait' and func == '_call_downloader':
             raise KeyboardInterrupt
+        last_func = func
+        frame = frame.f_back
 
 def _download_ytdl_signaled(url: str, dirpath: str):
     signal.signal(signal.SIGUSR1, _signal_handler)
@@ -58,9 +61,10 @@ def _download_ytdl_signaled(url: str, dirpath: str):
 class download_ytdl_interruptable:
     def __init__(self, url: str, dirpath: str):
         self.proc = multiprocessing.Process(
-        target=_download_ytdl_signaled,
-        args=(url, dirpath),
-    )
+            target=_download_ytdl_signaled,
+            args=(url, dirpath),
+        )
+        self.proc.start()
     def interrupt(self):
         os.kill(self.proc.pid, signal.SIGUSR1)
     def is_running(self):
