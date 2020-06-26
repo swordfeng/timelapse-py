@@ -239,7 +239,7 @@ class YoutubeLivestreamWatcher:
                 except:
                     logger.exception('Failed checking video status')
             logger.info(f'Waiting downloader to finish {self.video_id}')
-            ytdl_handle.wait(self.heartbeat_interval * 3)
+            ytdl_handle.wait(45)
             if ytdl_handle.is_running():
                 logger.info(f'Stopping downloader {self.video_id}')
                 ytdl_handle.interrupt()
