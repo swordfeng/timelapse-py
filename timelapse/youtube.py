@@ -4,6 +4,7 @@ import time
 import subprocess
 import os
 import objectpath
+import re
 import requests
 import sys
 import logging
@@ -14,7 +15,7 @@ import http
 import urllib.parse
 import xml.etree.ElementTree as ET
 from datetime import datetime
-from typing import Tuple
+from typing import Tuple, Optional
 
 from .logger import logger
 from .downloader import download_ytdl_interruptable
@@ -36,6 +37,7 @@ class YoutubeChannelWatcher:
         self,
         channel_id: str,
         download_path: str,
+        title_filter: Optional[str] = None,
         *,
         heartbeat_interval: int = 15,
         upcoming_poll_start: int = 300,
@@ -45,6 +47,7 @@ class YoutubeChannelWatcher:
         post_download = None,
     ):
         self.channel_id = channel_id
+        self.title_filter = re.compile(title_filter) if title_filter else None
         self.heartbeat_interval = heartbeat_interval
         self.upcoming_poll_start = upcoming_poll_start
         self.download_path = download_path
@@ -67,11 +70,15 @@ class YoutubeChannelWatcher:
         except:
             logger.exception('Polling error')
 
-    def watch_video(self, video_id: str):
+    def watch_video(self, video_id: str, title: str):
         with self.lock:
             if video_id in self.tracking:
                 self.tracking[video_id].force_refresh = True
             else:
+                if self.title_filter and not self.title_filter.search(title):
+                    logger.debug(f'Filtering out {video_id}')
+                    return
+                logger.info(f'Found {video_id}: {title}')
                 self.tracking[video_id] = YoutubeLivestreamWatcher(
                     video_id=video_id,
                     download_path=self.download_path,
@@ -94,19 +101,16 @@ class YoutubeChannelWatcher:
         logger.debug(channel_data)
         optree = objectpath.Tree(channel_data)
         pollres = set()
-        with self.lock:
-            for video_data in itertools.chain(
-                optree.execute(f'$..*[int(@.upcomingEventData.startTime) > 0]'),
-                optree.execute('$..*["BADGE_STYLE_TYPE_LIVE_NOW" in @.badges..style]'),
-            ):
-                video_id = video_data['videoId']
-                if video_id in self.tracking or video_id in pollres:
-                    # already tracked, pass
-                    continue
-                pollres.add(video_id)
-                logger.info(f'Polling found {video_id}: {video_data["title"]["simpleText"]}')
-        for video_id in pollres:
-            self.watch_video(video_id)
+        for video_data in itertools.chain(
+            optree.execute(f'$..*[int(@.upcomingEventData.startTime) > 0]'),
+            optree.execute('$..*["BADGE_STYLE_TYPE_LIVE_NOW" in @.badges..style]'),
+        ):
+            video_id = video_data['videoId']
+            title = video_data["title"]["simpleText"]
+            pollres.add((video_id, title))
+        for video_id, title in pollres:
+            logger.debug(f'Polling found {video_id}')
+            self.watch_video(video_id, title)
 
     def run_poll(self, interval: int):
         while True:
@@ -124,7 +128,7 @@ class YoutubeLivestreamWatcher:
         download_path: str,
         heartbeat_interval: int,
         upcoming_poll_start: int,
-        channel_watcher: YoutubeChannelWatcher = None,
+        channel_watcher: Optional[YoutubeChannelWatcher] = None,
         post_download = None,
     ):
         logger.info(f'Tracking video {video_id}')
@@ -318,10 +322,10 @@ class YoutubeWebhook:
                     video_id = entry.find('{http://www.youtube.com/xml/schemas/2015}videoId').text
                     channel_id = entry.find('{http://www.youtube.com/xml/schemas/2015}channelId').text
                     title = entry.find('{http://www.w3.org/2005/Atom}title').text
-                    logger.info(f'Push notification {video_id}: {title}')
+                    logger.debug(f'Push notification {video_id}')
                     with webhook.lock:
                         if channel_id in webhook.watchers:
-                            webhook.watchers[channel_id].watch_video(video_id)
+                            webhook.watchers[channel_id].watch_video(video_id, title)
                         else:
                             pass
                 self.send_response(200)
