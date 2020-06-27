@@ -217,6 +217,9 @@ class YoutubeLivestreamRecorder:
                             return
                         # start download now
                         break
+                    elif status == 'UNPLAYABLE':
+                        # canceled
+                        return
                     else:
                         logger.error(f'Video {self.video_id} unknown status: {status}')
                         return
