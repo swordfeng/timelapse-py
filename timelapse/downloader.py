@@ -153,7 +153,7 @@ class StreamlinkDownloader:
                 time.sleep(self.resolv_retry_interval)
             assert streams
             stream = streams['best']
-            logger.info(f'Streamlink stream: {stream}')
+            logger.debug(f'Streamlink stream: {stream}')
             written_bytes = 0
             with stream.open() as infile:
                 buffer = infile.read(self.bufsize)
