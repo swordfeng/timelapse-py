@@ -13,7 +13,7 @@ import os
 from typing import Optional
 
 from .logger import logger
-from .downloader import StreamlinkDownloader
+from .downloader import YouGetDownloader
 
 BILI_SOCK_HOST = 'broadcastlv.chat.bilibili.com'
 BILI_SOCK_PORT = 2243
@@ -29,7 +29,7 @@ class BilibiliLiveRoomWatcher:
         *,
         heartbeat_interval: int = 30,
         error_recover_wait: int = 5,
-        downloader = StreamlinkDownloader,
+        downloader = YouGetDownloader,
         started_download = None,
         post_download = None,
     ):
@@ -82,7 +82,7 @@ class BilibiliLiveRoomWatcher:
                 if r:
                     while True:
                         try:
-                            buf = self.conn.recv(4096)
+                            buf = self.conn.recv(8192)
                             if not buf:
                                 break
                             self.buffer += buf
@@ -98,7 +98,7 @@ class BilibiliLiveRoomWatcher:
                         self.reset()
                         continue
                 if self.dl_handle and not self.dl_handle.is_running():
-                    self.end_recording()
+                    self.need_poll = True
                 if self.need_poll:
                     self.poll()
                 if not r or time.time() + 0.5 > self.next_heartbeat:
@@ -132,6 +132,12 @@ class BilibiliLiveRoomWatcher:
                                 logger.exception(f'Started download hook error')
                     else:
                         logger.debug(f'Filtering out in room {self.room_id}: {title}')
+                elif self.dl_handle and not self.dl_handle.is_running():  # dl_handle dead
+                    logger.warning(f'Downloader for room {self.room_id} dead, restarting')
+                    self.dl_handle = self.downloader(
+                        BILI_ROOM_URL.format(room_id=self.room_id),
+                        dirpath=os.path.join(self.download_path, str(self.live_start_time)),
+                    )
             else:
                 self.end_recording()
             self.need_poll = False
@@ -169,12 +175,8 @@ class BilibiliLiveRoomWatcher:
             elif op == 3:
                 pass  # heartbeat reply?
             elif op == 5:
-                cmd = data['cmd']
-                if cmd == 'LIVE':
+                if data['cmd'] in ['LIVE', 'ROUND', 'CLOSE', 'PREPARING', 'END']:
                     self.need_poll = True
-                elif cmd in ['ROUND', 'CLOSE', 'PREPARING', 'END']:
-                    self.living = False
-                    self.end_recording()
     def finish_download(self, dl_handle, dirpath):
         finished = False
         try:
