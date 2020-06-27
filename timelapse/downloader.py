@@ -17,6 +17,14 @@ from typing import Optional
 
 from .logger import logger
 
+sl = streamlink.Streamlink({
+    'hds-timeout': 20.0,
+    'hls-timeout': 20.0,
+    'http-timeout': 20.0,
+    'stream-timeout': 20.0,
+    'rtmp-timeout': 20.0,
+})
+
 def _ytdl_signal_handler(signum, frame):
     last_func = None
     # hacking starts
@@ -115,6 +123,7 @@ class StreamlinkDownloader:
         dirpath: str,
         filename: Optional[str] = None,
         bufsize: int = 8192,
+        stream_timeout: int = 300,
         resolv_retry_interval: int = 3,
         resolv_retry_count: int = 5,
     ):
@@ -126,6 +135,7 @@ class StreamlinkDownloader:
         self.filename = filename
         self.extname = None
         self.bufsize = bufsize
+        self.stream_timeout = stream_timeout
         self.resolv_retry_interval = resolv_retry_interval
         self.resolv_retry_count = resolv_retry_count
         self._interrupted = False
@@ -146,7 +156,7 @@ class StreamlinkDownloader:
         try:
             filename = self.filename
             for i in range(1, self.resolv_retry_count + 1):
-                streams = streamlink.streams(self.url)
+                streams = sl.streams(self.url)
                 if streams or i == self.resolv_retry_count:
                     break
                 logger.debug(f'Failed to resolve {self.url}, retry #{i}')
@@ -168,11 +178,26 @@ class StreamlinkDownloader:
                     filename += self.extname
                 outfilename = os.path.join(self.dirpath, filename)
                 logger.info(f'Download destination: {outfilename}')
+                last_active = time.time()
                 with open(outfilename, 'wb') as outfile:
-                    while buffer and not self._interrupted:
-                        outfile.write(buffer)
-                        written_bytes += len(buffer)
-                        buffer = infile.read(self.bufsize)
+                    while not self._interrupted:
+                        if buffer:
+                            outfile.write(buffer)
+                            written_bytes += len(buffer)
+                        try:
+                            buffer = infile.read(self.bufsize)
+                            if not buffer:
+                                break
+                            last_active = time.time()
+                        except IOError as e:
+                            if self._interrupted:
+                                break
+                            if hasattr(e, 'args') and e.args == ('Read timeout',):
+                                if time.time() - last_active < self.stream_timeout:
+                                    logger.debug('streamlink stream read retry')
+                                    buffer = None
+                                    continue
+                            raise
                 self._finished = True
         except:
             logger.exception(f'Failed to download {self.url}')
