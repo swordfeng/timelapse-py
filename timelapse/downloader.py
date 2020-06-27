@@ -79,14 +79,13 @@ class YouGetDownloader:
         ).stdout
         infojson = json.loads(infodata, object_pairs_hook=OrderedDict)
         self.extname = next(iter(infojson['streams'].values()))['container']
-        with open(infopath, 'w') as f:
+        with open(infopath, 'wb') as f:
             f.write(infodata)
         logger.info('Download stream file')
         self.proc = subprocess.Popen(
             ('you-get', '-o', dirpath, '-O', filename, '--no-caption', '-f', url),
             stdout=sys.stdout,
             stderr=sys.stderr,
-            check=True,
         )
     def interrupt(self):
         if self.is_running():
