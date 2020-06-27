@@ -21,6 +21,7 @@ sl = streamlink.Streamlink({
     'hds-timeout': 20.0,
     'hls-timeout': 20.0,
     'http-timeout': 20.0,
+    'http-stream-timeout': 20.0,
     'stream-timeout': 20.0,
     'rtmp-timeout': 20.0,
 })
