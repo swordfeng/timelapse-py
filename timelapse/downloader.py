@@ -116,6 +116,8 @@ class StreamlinkDownloader:
         dirpath: str,
         filename: Optional[str] = None,
         bufsize: int = 8192,
+        resolv_retry_interval: int = 1,
+        resolv_retry_count: int = 10,
     ):
         logger.info(f'Downloading {url} using streamlink')
         if not filename:
@@ -125,6 +127,8 @@ class StreamlinkDownloader:
         self.filename = filename
         self.extname = None
         self.bufsize = bufsize
+        self.resolv_retry_interval = resolv_retry_interval
+        self.resolv_retry_count = resolv_retry_count
         self._interrupted = False
         self._finished = False
         self.thread = threading.Thread(target=self._download)
@@ -142,7 +146,14 @@ class StreamlinkDownloader:
     def _download(self):
         try:
             filename = self.filename
-            stream = streamlink.streams(self.url)['best']
+            for i in range(1, self.resolv_retry_count + 1):
+                streams = streamlink.streams(self.url)
+                if streams or i == self.resolv_retry_count:
+                    break
+                logger.debug(f'Failed to resolve {self.url}, retry #{i}')
+                time.sleep(self.resolv_retry_interval)
+            assert streams
+            stream = streams['best']
             logger.info(f'Streamlink stream: {stream}')
             written_bytes = 0
             with stream.open() as infile:
