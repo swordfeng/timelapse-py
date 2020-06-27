@@ -116,8 +116,8 @@ class StreamlinkDownloader:
         dirpath: str,
         filename: Optional[str] = None,
         bufsize: int = 8192,
-        resolv_retry_interval: int = 1,
-        resolv_retry_count: int = 10,
+        resolv_retry_interval: int = 3,
+        resolv_retry_count: int = 5,
     ):
         logger.info(f'Downloading {url} using streamlink')
         if not filename:
