@@ -18,7 +18,7 @@ from datetime import datetime
 from typing import Tuple, Optional
 
 from .logger import logger
-from .downloader import download_ytdl_interruptable
+from .downloader import YtdlDownloader
 
 YOUTUBE_CLIENT_VERSION = '2.20200623.04.00'
 YOUTUBE_COMMON_HEADERS = {
@@ -219,7 +219,7 @@ class YoutubeLivestreamWatcher:
                 time.sleep(self.heartbeat_interval)
             logger.info(f'Start downloading {self.video_id}')
             os.makedirs(self.download_path, exist_ok=True)
-            ytdl_handle = download_ytdl_interruptable(
+            ytdl_handle = YtdlDownloader(
                 YOUTUBE_VIDEO_URL.format(video_id=self.video_id),
                 self.download_path,
             )
