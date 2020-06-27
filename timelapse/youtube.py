@@ -80,7 +80,7 @@ class YoutubeChannelWatcher:
                 self.tracking[video_id].force_refresh = True
             else:
                 if self.title_filter and not self.title_filter.search(title):
-                    logger.debug(f'Filtering out {video_id}')
+                    logger.debug(f'Filtering out {video_id}: {title}')
                     return
                 logger.info(f'Found {video_id}: {title}')
                 self.tracking[video_id] = YoutubeLivestreamRecorder(
@@ -231,7 +231,10 @@ class YoutubeLivestreamRecorder:
                 self.video_id,
             )
             if self.started_download:
-                self.started_download(self.video_id, self.download_path)
+                try:
+                    self.started_download(self.video_id, self.download_path)
+                except:
+                    logger.exception('Started download hook error')
             # continue heartbeat
             while ytdl_handle.is_running():
                 time.sleep(self.heartbeat_interval)
