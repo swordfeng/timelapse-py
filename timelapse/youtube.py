@@ -18,7 +18,7 @@ from datetime import datetime
 from typing import Tuple, Optional
 
 from .logger import logger
-from .downloader import YtdlDownloader
+from .downloader import StreamlinkDownloader
 
 YOUTUBE_CLIENT_VERSION = '2.20200623.04.00'
 YOUTUBE_COMMON_HEADERS = {
@@ -44,6 +44,7 @@ class YoutubeChannelWatcher:
         poll_mode: bool = False,
         poll_interval: int = 900,
         webhook = None,
+        downloader = StreamlinkDownloader,
         started_download = None,
         post_download = None,
     ):
@@ -52,6 +53,7 @@ class YoutubeChannelWatcher:
         self.heartbeat_interval = heartbeat_interval
         self.upcoming_poll_start = upcoming_poll_start
         self.download_path = download_path
+        self.downloader = downloader
         self.started_download = started_download
         self.post_download = post_download
         self.tracking = {}
@@ -81,12 +83,13 @@ class YoutubeChannelWatcher:
                     logger.debug(f'Filtering out {video_id}')
                     return
                 logger.info(f'Found {video_id}: {title}')
-                self.tracking[video_id] = YoutubeLivestreamWatcher(
+                self.tracking[video_id] = YoutubeLivestreamRecorder(
                     video_id=video_id,
                     download_path=self.download_path,
                     heartbeat_interval=self.heartbeat_interval,
                     upcoming_poll_start=self.upcoming_poll_start,
                     channel_watcher=self,
+                    downloader=self.downloader,
                     started_download=self.started_download,
                     post_download=self.post_download,
                 )
@@ -124,14 +127,16 @@ class YoutubeChannelWatcher:
                 logger.exception('Polling error')
 
 
-class YoutubeLivestreamWatcher:
+class YoutubeLivestreamRecorder:
     def __init__(
         self,
         video_id: str,
         download_path: str,
+        *,
         heartbeat_interval: int,
         upcoming_poll_start: int,
         channel_watcher: Optional[YoutubeChannelWatcher] = None,
+        downloader = StreamlinkDownloader,
         started_download = None,
         post_download = None,
     ):
@@ -140,6 +145,7 @@ class YoutubeLivestreamWatcher:
         self.channel_watcher = channel_watcher
         self.heartbeat_interval = heartbeat_interval
         self.download_path = os.path.join(download_path, video_id)
+        self.downloader = downloader
         self.upcoming_poll_start = upcoming_poll_start
         self.started_download = started_download
         self.post_download = post_download
@@ -219,9 +225,10 @@ class YoutubeLivestreamWatcher:
                 time.sleep(self.heartbeat_interval)
             logger.info(f'Start downloading {self.video_id}')
             os.makedirs(self.download_path, exist_ok=True)
-            ytdl_handle = YtdlDownloader(
+            ytdl_handle = self.downloader(
                 YOUTUBE_VIDEO_URL.format(video_id=self.video_id),
                 self.download_path,
+                self.video_id,
             )
             if self.started_download:
                 self.started_download(self.video_id, self.download_path)

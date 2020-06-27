@@ -10,6 +10,8 @@ youtube-dl = "*"
 you-get = "*"
 requests = "*"
 objectpath = "*"
+streamlink = "*"
+python-magic = "*"
 
 [requires]
 python_version = "3.8"
