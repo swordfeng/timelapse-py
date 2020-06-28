@@ -180,7 +180,7 @@ class BilibiliLiveRoomWatcher:
             elif op == 3:
                 pass  # heartbeat reply?
             elif op == 5:
-                if data['cmd'] in ['LIVE', 'ROUND', 'CLOSE', 'PREPARING', 'END']:
+                if data['cmd'] in ['LIVE', 'ROUND', 'CLOSE', 'PREPARING', 'END', 'ROOM_CHANGE']:
                     self.need_poll = True
     def finish_download(self, dl_handle, dirpath, has_finished):
         finished = False
