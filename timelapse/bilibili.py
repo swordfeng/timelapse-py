@@ -13,7 +13,7 @@ import os
 from typing import Optional
 
 from .logger import logger
-from .downloader import YouGetDownloader
+from .downloader import StreamlinkDownloader
 
 BILI_SOCK_HOST = 'broadcastlv.chat.bilibili.com'
 BILI_SOCK_PORT = 2243
@@ -29,7 +29,7 @@ class BilibiliLiveRoomWatcher:
         *,
         heartbeat_interval: int = 30,
         error_recover_wait: int = 5,
-        downloader = YouGetDownloader,
+        downloader = StreamlinkDownloader,
         started_download = None,
         post_download = None,
     ):

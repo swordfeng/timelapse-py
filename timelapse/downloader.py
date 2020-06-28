@@ -10,6 +10,7 @@ import inspect
 import json
 import threading
 import streamlink
+import streamlink.stream
 import magic
 import mimetypes
 import you_get.common
@@ -155,6 +156,7 @@ class StreamlinkDownloader:
     def _download(self):
         try:
             filename = self.filename
+            infile = None
             for i in range(1, self.resolv_retry_count + 1):
                 streams = _streamlink.streams(self.url)
                 if streams or i == self.resolv_retry_count:
@@ -165,39 +167,47 @@ class StreamlinkDownloader:
             stream = streams['best']
             logger.debug(f'Streamlink stream: {stream}')
             written_bytes = 0
-            with stream.open() as infile:
-                buffer = infile.read(self.bufsize)
-                assert buffer
-                mime = magic.from_buffer(buffer, mime=True)
-                if mime == 'video/MP2T':
-                    self.extname = '.ts'
-                else:
-                    self.extname = mimetypes.guess_extension(mime, strict=False)
-                logger.info(f'Guessed mimetype {mime}; extname {self.extname}')
-                if self.extname:
-                    filename += self.extname
-                outfilename = os.path.join(self.dirpath, filename)
-                logger.info(f'Download destination: {outfilename}')
-                last_active = time.time()
-                with open(outfilename, 'wb') as outfile:
-                    while not self._interrupted:
-                        if buffer:
-                            outfile.write(buffer)
-                            written_bytes += len(buffer)
-                        try:
-                            buffer = infile.read(self.bufsize)
-                            if not buffer:
+            infile = stream.open()
+            buffer = infile.read(self.bufsize)
+            assert buffer
+            mime = magic.from_buffer(buffer, mime=True)
+            if mime == 'video/MP2T':
+                self.extname = '.ts'
+            else:
+                self.extname = mimetypes.guess_extension(mime, strict=False)
+            logger.info(f'Guessed mimetype {mime}; extname {self.extname}')
+            if self.extname:
+                filename += self.extname
+            outfilename = os.path.join(self.dirpath, filename)
+            logger.info(f'Download destination: {outfilename}')
+            last_active = time.time()
+            with open(outfilename, 'wb') as outfile:
+                while not self._interrupted:
+                    if buffer:
+                        outfile.write(buffer)
+                        written_bytes += len(buffer)
+                    try:
+                        buffer = infile.read(self.bufsize)
+                        if not buffer:
+                            if isinstance(stream, streamlink.stream.HTTPStream):
+                                logger.warning(f'Streamlink reconnecting to stream {self.url}')
+                                infile.close()
+                                infile = stream.open()
+                            else:
                                 break
-                            last_active = time.time()
-                        except IOError as e:
-                            if self._interrupted:
-                                break
-                            if hasattr(e, 'args') and e.args == ('Read timeout',):
-                                if time.time() - last_active < self.stream_timeout:
-                                    logger.debug('streamlink stream read retry')
-                                    buffer = None
-                                    continue
-                            raise
-                self._finished = True
+                        last_active = time.time()
+                    except IOError as e:
+                        if self._interrupted:
+                            break
+                        if hasattr(e, 'args') and e.args == ('Read timeout',):
+                            if time.time() - last_active < self.stream_timeout:
+                                logger.debug('streamlink stream read retry')
+                                buffer = None
+                                continue
+                        raise
+            self._finished = True
         except:
             logger.exception(f'Failed to download {self.url}')
+        finally:
+            if infile:
+                infile.close()
