@@ -127,7 +127,7 @@ class StreamlinkDownloader:
         bufsize: int = 8192,
         stream_timeout: int = 300,
         resolv_retry_interval: int = 5,
-        resolv_retry_count: int = 3,
+        resolv_retry_count: int = 4,
     ):
         logger.info(f'Downloading {url} using streamlink')
         if not filename:
