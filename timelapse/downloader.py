@@ -189,7 +189,7 @@ class StreamlinkDownloader:
                     try:
                         buffer = infile.read(self.bufsize)
                         if not buffer:
-                            if isinstance(stream, streamlink.stream.HTTPStream):
+                            if type(stream) is streamlink.stream.HTTPStream:
                                 logger.warning(f'Streamlink reconnecting to stream {self.url}')
                                 infile.close()
                                 infile = stream.open()
