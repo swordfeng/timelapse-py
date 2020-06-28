@@ -14,6 +14,7 @@ import streamlink.stream
 import magic
 import mimetypes
 import you_get.common
+import requests
 from collections import OrderedDict
 from typing import Optional
 
@@ -157,13 +158,19 @@ class StreamlinkDownloader:
         try:
             filename = self.filename
             infile = None
+            streams = None
             for i in range(1, self.resolv_retry_count + 1):
-                streams = _streamlink.streams(self.url)
+                try:
+                    streams = _streamlink.streams(self.url)
+                except:
+                    pass
                 if streams or i == self.resolv_retry_count:
                     break
                 logger.debug(f'Failed to resolve {self.url}, retry #{i}')
                 time.sleep(self.resolv_retry_interval)
-            assert streams
+            if not streams:
+                logger.error(f'Failed to resolve {self.url}')
+                return
             stream = streams['best']
             logger.debug(f'Streamlink stream: {stream}')
             written_bytes = 0
@@ -190,7 +197,7 @@ class StreamlinkDownloader:
                         buffer = infile.read(self.bufsize)
                         if not buffer:
                             if type(stream) is streamlink.stream.HTTPStream:
-                                logger.warning(f'Streamlink reconnecting to stream {self.url}')
+                                logger.info(f'Streamlink reconnecting to stream {self.url}')
                                 infile.close()
                                 infile = stream.open()
                             else:
@@ -205,9 +212,23 @@ class StreamlinkDownloader:
                                 buffer = None
                                 continue
                         raise
+                    except streamlink.StreamError as e:
+                        if self._interrupted:
+                            break
+                        if hasattr(e, 'err'):
+                            if (
+                                type(e.err) is requests.Timeout
+                                and time.time() - last_active < self.stream_timeout
+                            ):
+                                logger.debug('streamlink stream read retry')
+                                buffer = None
+                                continue
+                            elif type(e.err) is requests.HTTPError:
+                                break
+                        raise
             self._finished = True
-        except:
-            logger.exception(f'Failed to download {self.url}')
+        except Exception as e:
+            logger.error(f'Failed to download {self.url}: {e}')
         finally:
             if infile:
                 infile.close()
