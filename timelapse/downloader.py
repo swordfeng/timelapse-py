@@ -126,8 +126,8 @@ class StreamlinkDownloader:
         filename: Optional[str] = None,
         bufsize: int = 8192,
         stream_timeout: int = 300,
-        resolv_retry_interval: int = 3,
-        resolv_retry_count: int = 5,
+        resolv_retry_interval: int = 5,
+        resolv_retry_count: int = 3,
     ):
         logger.info(f'Downloading {url} using streamlink')
         if not filename:
@@ -159,17 +159,25 @@ class StreamlinkDownloader:
             filename = self.filename
             infile = None
             streams = None
+            resolv_exception = None
             for i in range(1, self.resolv_retry_count + 1):
+                if self._interrupted:
+                    self._finished = True
+                    return
                 try:
                     streams = _streamlink.streams(self.url)
-                except:
-                    pass
+                except Exception as e:
+                    resolv_exception = e
                 if streams or i == self.resolv_retry_count:
                     break
                 logger.debug(f'Failed to resolve {self.url}, retry #{i}')
                 time.sleep(self.resolv_retry_interval)
+            if self._interrupted:
+                self._finished = True
+                return
             if not streams:
-                logger.error(f'Failed to resolve {self.url}')
+                if type(streams) is not dict:
+                    logger.error(f'Failed to resolve {self.url}: {repr(resolv_exception)}')
                 return
             stream = streams['best']
             logger.debug(f'Streamlink stream: {stream}')
@@ -197,9 +205,10 @@ class StreamlinkDownloader:
                         buffer = infile.read(self.bufsize)
                         if not buffer:
                             if type(stream) is streamlink.stream.HTTPStream:
-                                logger.info(f'Streamlink reconnecting to stream {self.url}')
+                                logger.debug(f'Streamlink reconnecting to stream {self.url}')
                                 infile.close()
                                 infile = stream.open()
+                                logger.info(f'Streamlink reconnected to stream {self.url}')
                             else:
                                 break
                         last_active = time.time()
@@ -226,6 +235,7 @@ class StreamlinkDownloader:
                             elif type(e.err) is requests.HTTPError:
                                 break
                         raise
+            logger.info(f'Streamlink finished {self.url}, file stored to {outfilename}')
             self._finished = True
         except Exception as e:
             logger.error(f'Failed to download {self.url}: {e}')

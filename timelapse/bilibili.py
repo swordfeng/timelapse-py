@@ -46,6 +46,7 @@ class BilibiliLiveRoomWatcher:
         self.dl_handle = None
         self.need_poll = False
         self.live_start_time = 0
+        self.has_finished = False
         self.reset()  # setup connection
         self.poll()
         self.thread = threading.Thread(target=self.mainloop)
@@ -112,12 +113,13 @@ class BilibiliLiveRoomWatcher:
             info = requests.get(BILI_ROOM_INFO_URL.format(room_id=self.room_id)).json()
             room_info = info['data']['room_info']
             if room_info['live_status'] == 1:  # living
+                title = room_info['title']
                 if self.live_start_time != room_info['live_start_time']:  # new stream
                     self.end_recording()
-                    # start recording
                     self.live_start_time = room_info['live_start_time']
-                    title = room_info['title']
+                if not self.dl_handle:
                     if not self.title_filter or self.title_filter.search(title):
+                        # start recording
                         logger.info(f'Room {self.room_id} started stream: {title}')
                         dirpath = os.path.join(self.download_path, str(self.live_start_time))
                         os.makedirs(dirpath, exist_ok=True)
@@ -132,8 +134,10 @@ class BilibiliLiveRoomWatcher:
                                 logger.exception(f'Started download hook error')
                     else:
                         logger.debug(f'Filtering out in room {self.room_id}: {title}')
-                elif self.dl_handle and not self.dl_handle.is_running():  # dl_handle dead
-                    logger.warning(f'Downloader for room {self.room_id} dead, restarting')
+                elif not self.dl_handle.is_running():  # dl_handle dead
+                    if self.dl_handle.finished():
+                        self.has_finished = True
+                    logger.info(f'Downloader for room {self.room_id} dead, restarting (stream may be ended)')
                     self.dl_handle = self.downloader(
                         BILI_ROOM_URL.format(room_id=self.room_id),
                         dirpath=os.path.join(self.download_path, str(self.live_start_time)),
@@ -148,10 +152,11 @@ class BilibiliLiveRoomWatcher:
             dirpath = os.path.join(self.download_path, str(self.live_start_time))
             threading.Thread(
                 target=self.finish_download,
-                args=(self.dl_handle, dirpath)
+                args=(self.dl_handle, dirpath, self.has_finished)
             ).start()
             self.dl_handle = None
         self.live_start_time = 0
+        self.has_finished = False
     def heartbeat(self):
         self.conn.sendall(bili_encode_packet(2, b''))  # heartbeat
         self.next_heartbeat = time.time() + self.heartbeat_interval
@@ -177,7 +182,7 @@ class BilibiliLiveRoomWatcher:
             elif op == 5:
                 if data['cmd'] in ['LIVE', 'ROUND', 'CLOSE', 'PREPARING', 'END']:
                     self.need_poll = True
-    def finish_download(self, dl_handle, dirpath):
+    def finish_download(self, dl_handle, dirpath, has_finished):
         finished = False
         try:
             logger.info(f'Waiting downloader to finish for room {self.room_id}')
@@ -186,7 +191,7 @@ class BilibiliLiveRoomWatcher:
                 logger.info(f'Stopping downloader {self.room_id}')
                 dl_handle.interrupt()
             dl_handle.wait()
-            finished = dl_handle.finished()
+            finished = has_finished or dl_handle.finished()
             if finished:
                 logger.info(f'Finished downloading {self.room_id}')
         except:
