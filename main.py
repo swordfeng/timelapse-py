@@ -49,3 +49,5 @@ channels = (
 
 for channel_id, path in channels:
     YoutubeChannelWatcher(channel_id, path, webhook=webhook)
+
+check_status()

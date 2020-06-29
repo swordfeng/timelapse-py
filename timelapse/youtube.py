@@ -19,6 +19,7 @@ from typing import Tuple, Optional
 
 from .logger import logger
 from .downloader import StreamlinkDownloader
+from .status import status_add_watch
 
 YOUTUBE_CLIENT_VERSION = '2.20200623.04.00'
 YOUTUBE_COMMON_HEADERS = {
@@ -58,6 +59,7 @@ class YoutubeChannelWatcher:
         self.post_download = post_download
         self.tracking = {}
         self.lock = threading.RLock()
+        self.name = '<loading>'
         # repeated poll in polling mode
         if poll_mode:
             logger.info(f'Monitoring channel {channel_id} using polling')
@@ -68,6 +70,7 @@ class YoutubeChannelWatcher:
         if webhook:
             logger.info(f'Monitoring channel {channel_id} using webhook')
             webhook.subscribe(channel_id, self)
+        status_add_watch(self)
         # initial poll
         try:
             self.poll()
@@ -85,6 +88,7 @@ class YoutubeChannelWatcher:
                 logger.info(f'Found {video_id}: {title}')
                 self.tracking[video_id] = YoutubeLivestreamRecorder(
                     video_id=video_id,
+                    title=title,
                     download_path=self.download_path,
                     heartbeat_interval=self.heartbeat_interval,
                     upcoming_poll_start=self.upcoming_poll_start,
@@ -106,6 +110,7 @@ class YoutubeChannelWatcher:
         ).json()
         logger.debug(channel_data)
         optree = objectpath.Tree(channel_data)
+        self.name = next(optree.execute('$..channelMetadataRenderer.title'))
         pollres = set()
         for video_data in itertools.chain(
             optree.execute(f'$..*[int(@.upcomingEventData.startTime) > 0]'),
@@ -125,6 +130,12 @@ class YoutubeChannelWatcher:
                 self.poll()
             except:
                 logger.exception('Polling error')
+    
+    def status(self):
+        return [
+            f'Youtube Channel {self.name} (https://youtube.com/channel/{self.channel_id})',
+            [line for t in self.tracking.values() for line in t.status()],
+        ]
 
 
 class YoutubeLivestreamRecorder:
@@ -135,6 +146,7 @@ class YoutubeLivestreamRecorder:
         *,
         heartbeat_interval: int,
         upcoming_poll_start: int,
+        title: str,
         channel_watcher: Optional[YoutubeChannelWatcher] = None,
         downloader = StreamlinkDownloader,
         started_download = None,
@@ -142,6 +154,7 @@ class YoutubeLivestreamRecorder:
     ):
         logger.info(f'Tracking video {video_id}')
         self.video_id = video_id
+        self.title = title
         self.channel_watcher = channel_watcher
         self.heartbeat_interval = heartbeat_interval
         self.download_path = os.path.join(download_path, video_id)
@@ -153,6 +166,7 @@ class YoutubeLivestreamRecorder:
         self.last_poll = 0
         self.force_refresh = True
         self.finished = False
+        self.statestr = 'waiting'
         self.watch_thread = threading.Thread(target=self.run_watch)
         self.watch_thread.start()
 
@@ -233,6 +247,7 @@ class YoutubeLivestreamRecorder:
                 self.download_path,
                 self.video_id,
             )
+            self.statestr = 'recording'
             if self.started_download:
                 try:
                     self.started_download(self.video_id, self.download_path)
@@ -251,6 +266,7 @@ class YoutubeLivestreamRecorder:
                             break
                 except:
                     logger.exception('Failed checking video status')
+            self.statestr = 'finishing'
             logger.info(f'Waiting downloader to finish {self.video_id}')
             ytdl_handle.wait(45)
             if ytdl_handle.is_running():
@@ -273,7 +289,17 @@ class YoutubeLivestreamRecorder:
                     self.post_download(self.video_id, self.download_path, self.finished)
                 except:
                     logger.exception('Post download hook error')
+            self.statestr = 'invalid'
 
+    def status(self):
+        schedule_str = (
+            f' scheduled at {datetime.fromtimestamp(self.scheduled_time)}'
+            if self.scheduled_time
+            else ''
+        )
+        return [
+            f'[{self.statestr}] {self.title} (https://youtu.be/{self.video_id}){schedule_str}'
+        ]
 
 class YoutubeWebhook:
     def __init__(
@@ -289,6 +315,7 @@ class YoutubeWebhook:
         self.server_thread.start()
         self.keep_alive = threading.Thread(target=self.subscribe_keep_alive)
         self.keep_alive.start()
+        status_add_watch(self)
         logger.info('Started serving youtube webhook')
 
     def subscribe(self, channel_id: str, watcher):
@@ -354,3 +381,6 @@ class YoutubeWebhook:
                 self.send_response(200)
                 self.end_headers()
         return YoutubeWebhookHandler
+
+    def status(self):
+        return [f'Youtube webhook: {len(self.watchers)} subscribers']
