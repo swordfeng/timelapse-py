@@ -29,7 +29,7 @@ YOUTUBE_COMMON_HEADERS = {
 YOUTUBE_CHANNEL_DATA = 'https://www.youtube.com/channel/{channel_id}?pbj=1'
 YOUTUBE_LIVE_HEARTBEAT = 'https://www.youtube.com/youtubei/v1/player/heartbeat?alt=json&key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8'
 YOUTUBE_VIDEO_URL = 'https://www.youtube.com/watch?v={video_id}'
-YOUTUBE_FEED_HUB = 'http://pubsubhubbub.appspot.com'
+YOUTUBE_FEED_HUB = 'https://pubsubhubbub.appspot.com'
 YOUTUBE_CHANNEL_FEED_URL = 'https://www.youtube.com/xml/feeds/videos.xml?channel_id={channel_id}'
 
 

@@ -14,6 +14,7 @@ from typing import Optional
 
 from .logger import logger
 from .downloader import StreamlinkDownloader
+from .status import status_add_watch
 
 BILI_SOCK_HOST = 'broadcastlv.chat.bilibili.com'
 BILI_SOCK_PORT = 2243
@@ -47,6 +48,9 @@ class BilibiliLiveRoomWatcher:
         self.need_poll = False
         self.live_start_time = 0
         self.has_finished = False
+        self.username = '<loading>'
+        self.title = '<loading>'
+        status_add_watch(self)
         self.reset()  # setup connection
         self.poll()
         self.thread = threading.Thread(target=self.mainloop)
@@ -112,6 +116,8 @@ class BilibiliLiveRoomWatcher:
         try:
             info = requests.get(BILI_ROOM_INFO_URL.format(room_id=self.room_id)).json()
             room_info = info['data']['room_info']
+            self.username = info['data']['anchor_info']['base_info']['uname']
+            self.title = room_info['title']
             if room_info['live_status'] == 1:  # living
                 title = room_info['title']
                 if self.live_start_time != room_info['live_start_time']:  # new stream
@@ -203,6 +209,12 @@ class BilibiliLiveRoomWatcher:
                     self.post_download(self.room_id, dirpath, finished)
                 except:
                     logger.exception('Post download hook error')
+    def status(self):
+        return [
+            f'Bilibili Live Room {self.title} by {self.username} '
+            + ('[live]' if self.live_start_time else '[offline]')
+            + ('[recording]' if self.dl_handle else '')
+        ]
 
 def bili_encode_packet(type: int, data):
     if isinstance(data, bytearray):
