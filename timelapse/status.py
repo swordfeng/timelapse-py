@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import time
+from datetime import datetime
 from .logger import logger
 
 _status_watch = []
@@ -12,6 +13,7 @@ def status_remove_watch(target):
 
 def status_print():
     status = [line for o in _status_watch for line in o.status()]
+    status = [f'Report Time: {datetime.now()}'] + status
     logger.info(' ===== STATUS REPORT =====')
     _print_status_lines(status)
     logger.info(' ===== END STATUS REPORT =====')

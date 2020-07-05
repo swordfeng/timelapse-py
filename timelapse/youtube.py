@@ -298,7 +298,7 @@ class YoutubeLivestreamRecorder:
             else ''
         )
         return [
-            f'[{self.statestr}] {self.title} (https://youtu.be/{self.video_id}){schedule_str}'
+            f'{self.title} (https://youtu.be/{self.video_id}){schedule_str} [{self.statestr}]'
         ]
 
 class YoutubeWebhook:
