@@ -31,6 +31,7 @@ YOUTUBE_LIVE_HEARTBEAT = 'https://www.youtube.com/youtubei/v1/player/heartbeat?a
 YOUTUBE_VIDEO_URL = 'https://www.youtube.com/watch?v={video_id}'
 YOUTUBE_FEED_HUB = 'https://pubsubhubbub.appspot.com'
 YOUTUBE_CHANNEL_FEED_URL = 'https://www.youtube.com/xml/feeds/videos.xml?channel_id={channel_id}'
+YOUTUBE_URL_EXPIRE = 3600 * 6
 
 
 class YoutubeChannelWatcher:
@@ -242,6 +243,7 @@ class YoutubeLivestreamRecorder:
                 time.sleep(self.heartbeat_interval)
             logger.info(f'Start downloading {self.video_id}')
             os.makedirs(self.download_path, exist_ok=True)
+            dl_expire = time.time() + YOUTUBE_URL_EXPIRE
             ytdl_handle = self.downloader(
                 YOUTUBE_VIDEO_URL.format(video_id=self.video_id),
                 self.download_path,
@@ -255,6 +257,17 @@ class YoutubeLivestreamRecorder:
                     logger.exception('Started download hook error')
             # continue heartbeat
             while ytdl_handle.is_running():
+                # if the url is expiring, we start a new recording stream
+                now = time.time()
+                if now + self.heartbeat_interval >= dl_expire:
+                    dl_expire = now + YOUTUBE_URL_EXPIRE
+                    old_handle = ytdl_handle
+                    ytdl_handle = self.downloader(
+                        YOUTUBE_VIDEO_URL.format(video_id=self.video_id),
+                        self.download_path,
+                        self.video_id + '.' + str(int(now)),
+                    )
+                    old_handle.interrupt()
                 time.sleep(self.heartbeat_interval)
                 try:
                     status_data = self.poll_heartbeat()
