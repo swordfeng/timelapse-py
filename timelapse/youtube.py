@@ -14,6 +14,7 @@ import json
 import http
 import urllib.parse
 import xml.etree.ElementTree as ET
+from collections import deque
 from datetime import datetime
 from typing import Tuple, Optional
 
@@ -59,6 +60,7 @@ class YoutubeChannelWatcher:
         self.started_download = started_download
         self.post_download = post_download
         self.tracking = {}
+        self.cleanup_queue = deque()
         self.lock = threading.RLock()
         self.name = '<loading>'
         # repeated poll in polling mode
@@ -100,8 +102,7 @@ class YoutubeChannelWatcher:
                 )
 
     def finish_tracking(self, video_id: str):
-        with self.lock:
-            del self.tracking[video_id]
+        self.cleanup_queue.append((video_id, time.time() + 3600 * 6))
 
     def poll(self):
         logger.debug(f'Polling channel {self.channel_id}')
@@ -129,6 +130,9 @@ class YoutubeChannelWatcher:
             try:
                 time.sleep(interval)
                 self.poll()
+                with self.lock:
+                    while self.cleanup_queue and self.cleanup_queue[0][1] >= time.time():
+                        del self.tracking[self.cleanup_queue.popleft()[0]]
             except:
                 logger.exception('Polling error')
     
@@ -167,6 +171,7 @@ class YoutubeLivestreamRecorder:
         self.last_poll = 0
         self.force_refresh = True
         self.finished = False
+        self.cleanup = False
         self.statestr = 'waiting'
         self.watch_thread = threading.Thread(target=self.run_watch)
         self.watch_thread.start()
@@ -293,6 +298,7 @@ class YoutubeLivestreamRecorder:
         except:
             logger.exception(f'Failed to download {self.video_id}')
         finally:
+            self.cleanup = True
             if self.channel_watcher:
                 self.channel_watcher.finish_tracking(self.video_id)
             if ytdl_handle and ytdl_handle.is_running():
@@ -305,6 +311,8 @@ class YoutubeLivestreamRecorder:
             self.statestr = 'invalid'
 
     def status(self):
+        if self.cleanup:
+            return []
         schedule_str = (
             f' scheduled at {datetime.fromtimestamp(self.scheduled_time)}'
             if self.scheduled_time
