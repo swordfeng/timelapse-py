@@ -101,8 +101,12 @@ class YoutubeChannelWatcher:
                     post_download=self.post_download,
                 )
 
-    def finish_tracking(self, video_id: str):
-        self.cleanup_queue.append((video_id, time.time() + 3600 * 6))
+    def finish_tracking(self, video_id: str, delay: bool):
+        if delay:
+            self.cleanup_queue.append((video_id, time.time() + 3600 * 6))
+        else:
+            with self.lock:
+                del self.tracking[video_id]
 
     def poll(self):
         logger.debug(f'Polling channel {self.channel_id}')
@@ -300,7 +304,7 @@ class YoutubeLivestreamRecorder:
         finally:
             self.cleanup = True
             if self.channel_watcher:
-                self.channel_watcher.finish_tracking(self.video_id)
+                self.channel_watcher.finish_tracking(self.video_id, delay=self.finished)
             if ytdl_handle and ytdl_handle.is_running():
                 ytdl_handle.kill()
             if self.post_download:
