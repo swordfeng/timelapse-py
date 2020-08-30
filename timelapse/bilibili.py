@@ -39,6 +39,7 @@ class BilibiliLiveRoomWatcher:
         self.download_path = download_path
         self.title_filter = title_filter and re.compile(title_filter)
         self.heartbeat_interval = heartbeat_interval
+        self.heartbeat_received = time.time()
         self.error_recover_wait = error_recover_wait
         self.downloader = downloader
         self.started_download = started_download
@@ -74,12 +75,17 @@ class BilibiliLiveRoomWatcher:
                 'type': 2,
             }))
             self.next_heartbeat = time.time() + self.heartbeat_interval
+            self.heartbeat_received = time.time()
         except:
             logger.exception('Failed to reconnect')
     def mainloop(self):
         while True:
             try:
                 now = time.time()
+                if now - self.heartbeat_received > self.heartbeat_interval * 3:
+                    logger.info('No activity on room connection')
+                    self.reset()
+                    continue
                 r, w, x = select.select([self.conn], [], [self.conn], self.next_heartbeat - now)
                 if x:
                     self.reset()
@@ -173,6 +179,7 @@ class BilibiliLiveRoomWatcher:
             packet_len, = struct.unpack('>I', self.buffer[:4])
             if len(self.buffer) < packet_len:
                 return
+            self.heartbeat_received = time.time()
             packet_buf = self.buffer[:packet_len]
             self.buffer = self.buffer[packet_len:]
             proto, op, data = bili_decode_packet(packet_buf)
