@@ -256,7 +256,7 @@ class YoutubeLivestreamRecorder:
             ytdl_handle = self.downloader(
                 YOUTUBE_VIDEO_URL.format(video_id=self.video_id),
                 self.download_path,
-                self.video_id,
+                self.video_id + '.' + str(int(time.time())),
             )
             self.statestr = 'recording'
             if self.started_download:
