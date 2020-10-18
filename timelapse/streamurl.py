@@ -52,11 +52,12 @@ class StreamUrlWatcher:
                         dirpath = os.path.join(self.download_path, next_run.strftime('%Y%m%d_%H%M%S_%Z'))
                         os.makedirs(dirpath, exist_ok=True)
                         self.finished = False
+                        run_start_hook = self.dl_handle is None
                         self.dl_handle = StreamlinkDownloader(
                             self.url,
                             dirpath=dirpath,
                         )
-                        if self.started_download:
+                        if run_start_hook and self.started_download:
                             try:
                                 self.started_download(self.url, dirpath)
                             except:
