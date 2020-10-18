@@ -12,6 +12,8 @@ requests = "*"
 objectpath = "*"
 streamlink = "*"
 python-magic = "*"
+tzcron = "*"
+pytz = "*"
 
 [requires]
 python_version = "3.8"
