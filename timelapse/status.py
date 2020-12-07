@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import time
+import os
 from datetime import datetime
 from .logger import logger
 
@@ -27,11 +28,12 @@ def _print_status_lines(status, padding = 0):
 
 def check_status(interval=5):
     while True:
+        status_print()
         try:
             while True:
                 time.sleep(interval)
                 status_print()
         except KeyboardInterrupt:
             pass
-        status_print()
         time.sleep(0.5)
+    os._exit()
