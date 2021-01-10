@@ -116,6 +116,7 @@ _streamlink = streamlink.Streamlink({
     'http-stream-timeout': 20.0,
     'stream-timeout': 20.0,
     'rtmp-timeout': 20.0,
+    'http-ssl-verify': False,
 })
 
 class StreamlinkDownloader:
