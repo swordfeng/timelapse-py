@@ -119,11 +119,15 @@ class YoutubeChannelWatcher:
         self.name = next(optree.execute('$..channelMetadataRenderer.title'))
         pollres = set()
         for video_data in itertools.chain(
-            optree.execute(f'$..*[int(@.upcomingEventData.startTime) > 0]'),
-            optree.execute('$..*["BADGE_STYLE_TYPE_LIVE_NOW" in @.badges..style]'),
+            #optree.execute(f'$..*[int(@.upcomingEventData.startTime) > 0]'),
+            optree.execute('$..*["LIVE" in @.thumbnailOverlays..style]'),
+            optree.execute('$..*["UPCOMING" in @.thumbnailOverlays..style]'),
         ):
             video_id = video_data['videoId']
-            title = video_data["title"]["simpleText"]
+            if "runs" in video_data["title"]:
+                title = video_data["title"]["runs"][0]["text"]
+            else:
+                title = video_data["title"]["simpleText"]
             pollres.add((video_id, title))
         for video_id, title in pollres:
             logger.debug(f'Polling found {video_id}')
