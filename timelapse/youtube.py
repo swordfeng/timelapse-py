@@ -230,7 +230,7 @@ class YoutubeLivestreamRecorder:
                         logger.error('Server error: ' + status_data['error']['message'])
                         return
                     status = status_data['playabilityStatus']['status']
-                    if status == 'LIVE_STREAM_OFFLINE':
+                    if status == 'LIVE_STREAM_OFFLINE' and 'liveStreamability' in status_data['playabilityStatus']:
                         renderer = status_data['playabilityStatus']['liveStreamability']['liveStreamabilityRenderer']
                         if 'displayEndscreen' in renderer and renderer['displayEndscreen']:
                             # old recorded live video
